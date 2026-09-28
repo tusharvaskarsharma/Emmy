@@ -120,6 +120,17 @@ async def create_memory(conn: asyncpg.Connection, memory: MemoryFragment, user_i
     query = """
     INSERT INTO memories (id, session_id, subject_id, user_id, content, emotion_tags, topics, people_mentioned, consent_level, confidence_score, time_period, search_document, semantic_metadata)
     VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8::jsonb, $9, $10, $11, $12, $13::jsonb)
+    ON CONFLICT (id) DO UPDATE SET
+        content = EXCLUDED.content,
+        emotion_tags = EXCLUDED.emotion_tags,
+        topics = EXCLUDED.topics,
+        people_mentioned = EXCLUDED.people_mentioned,
+        consent_level = EXCLUDED.consent_level,
+        confidence_score = EXCLUDED.confidence_score,
+        time_period = EXCLUDED.time_period,
+        search_document = EXCLUDED.search_document,
+        semantic_metadata = EXCLUDED.semantic_metadata,
+        updated_at = now()
     RETURNING *
     """
     row = await conn.fetchrow(
@@ -179,6 +190,18 @@ async def list_memories(conn: asyncpg.Connection, user_id: UUID | str) -> List[M
         memories.append(MemoryFragment(**row_dict))
     return memories
 
+async def list_memories_for_session(conn: asyncpg.Connection, session_id: UUID | str) -> List[MemoryFragment]:
+    rows = await conn.fetch("SELECT * FROM memories WHERE session_id = $1 ORDER BY created_at ASC", session_id)
+    memories = []
+    for row in rows:
+        row_dict = dict(row)
+        row_dict['emotion_tags'] = json.loads(row_dict['emotion_tags']) if isinstance(row_dict['emotion_tags'], str) else row_dict['emotion_tags']
+        row_dict['topics'] = json.loads(row_dict['topics']) if isinstance(row_dict['topics'], str) else row_dict['topics']
+        row_dict['people_mentioned'] = json.loads(row_dict['people_mentioned']) if isinstance(row_dict['people_mentioned'], str) else row_dict['people_mentioned']
+        row_dict['semantic_metadata'] = json.loads(row_dict['semantic_metadata']) if isinstance(row_dict.get('semantic_metadata'), str) else row_dict.get('semantic_metadata') or {}
+        memories.append(MemoryFragment(**row_dict))
+    return memories
+
 async def update_memory(conn: asyncpg.Connection, memory_id: UUID | str, user_id: UUID | str, updates: dict) -> Optional[MemoryFragment]:
     set_clauses = []
     values = []
@@ -202,6 +225,10 @@ async def update_memory(conn: asyncpg.Connection, memory_id: UUID | str, user_id
         row_dict['semantic_metadata'] = json.loads(row_dict['semantic_metadata']) if isinstance(row_dict.get('semantic_metadata'), str) else row_dict.get('semantic_metadata') or {}
         return MemoryFragment(**row_dict)
     return None
+
+async def delete_memory(conn: asyncpg.Connection, memory_id: UUID | str, user_id: UUID | str) -> bool:
+    result = await conn.execute("DELETE FROM memories WHERE id = $1 AND user_id = $2", memory_id, user_id)
+    return result == "DELETE 1"
 
 async def create_finetune_job(conn: asyncpg.Connection, job: FinetuneJob) -> FinetuneJob:
     user_id = await conn.fetchval("SELECT user_id FROM subjects WHERE id = $1", job.subject_id)
@@ -236,3 +263,82 @@ async def get_latest_finetune_job(conn: asyncpg.Connection, subject_id: UUID | s
     query = "SELECT * FROM finetune_jobs WHERE subject_id = $1 ORDER BY created_at DESC LIMIT 1"
     row = await conn.fetchrow(query, subject_id)
     return FinetuneJob(**dict(row)) if row else None
+
+async def enqueue_session_processing(conn: asyncpg.Connection, session_id: UUID | str, user_id: UUID | str) -> str | None:
+    """Enqueue a session processing job durably. 
+    Returns the job_id if a new job was enqueued, or None if the job already exists and is not failed."""
+    query = """
+    INSERT INTO processing_jobs (user_id, job_type, payload, status)
+    VALUES ($1, 'process_session', jsonb_build_object('session_id', $2::text), 'queued')
+    ON CONFLICT (user_id, job_type, (payload->>'session_id')) WHERE job_type = 'process_session'
+    DO UPDATE SET status = 'queued', updated_at = now()
+    WHERE processing_jobs.status = 'failed'
+    RETURNING id
+    """
+    row = await conn.fetchrow(query, user_id, str(session_id))
+    return str(row['id']) if row else None
+
+async def enqueue_memory_indexing(conn: asyncpg.Connection, session_id: UUID | str, user_id: UUID | str) -> str | None:
+    query = """
+    INSERT INTO processing_jobs (user_id, job_type, payload, status)
+    VALUES ($1, 'index_memory', jsonb_build_object('session_id', $2::text), 'queued')
+    ON CONFLICT (user_id, job_type, (payload->>'session_id')) WHERE job_type = 'index_memory'
+    DO UPDATE SET status = 'queued', updated_at = now()
+    WHERE processing_jobs.status = 'failed'
+    RETURNING id
+    """
+    row = await conn.fetchrow(query, user_id, str(session_id))
+    return str(row['id']) if row else None
+
+async def enqueue_persona_retraining(conn: asyncpg.Connection, subject_id: UUID | str, user_id: UUID | str) -> str | None:
+    query = """
+    INSERT INTO processing_jobs (user_id, job_type, payload, status)
+    VALUES ($1, 'retrain_persona', jsonb_build_object('subject_id', $2::text), 'queued')
+    ON CONFLICT (user_id, job_type, (payload->>'subject_id')) WHERE job_type = 'retrain_persona'
+    DO UPDATE SET status = 'queued', updated_at = now()
+    WHERE processing_jobs.status = 'failed'
+    RETURNING id
+    """
+    row = await conn.fetchrow(query, user_id, str(subject_id))
+    return str(row['id']) if row else None
+
+async def claim_processing_job(conn: asyncpg.Connection, job_id: UUID | str = None, lease_minutes: int = 5) -> tuple[str | None, str | None]:
+    """Transition a specific job, or the next available queued/stale job, to processing state.
+    Returns (job_id, job_type) if successfully claimed."""
+    if job_id:
+        query = f"""
+        UPDATE processing_jobs 
+        SET status = 'processing', updated_at = now() 
+        WHERE id = $1 
+          AND (
+              status = 'queued' 
+              OR (status = 'processing' AND updated_at < now() - interval '{lease_minutes} minutes')
+          )
+        RETURNING id, job_type
+        """
+        row = await conn.fetchrow(query, str(job_id))
+    else:
+        query = f"""
+        UPDATE processing_jobs 
+        SET status = 'processing', updated_at = now()
+        WHERE id = (
+            SELECT id
+            FROM processing_jobs
+            WHERE (
+                  status = 'queued' 
+                  OR (status = 'processing' AND updated_at < now() - interval '{lease_minutes} minutes')
+              )
+            ORDER BY created_at ASC
+            FOR UPDATE SKIP LOCKED
+            LIMIT 1
+        )
+        RETURNING id, job_type
+        """
+        row = await conn.fetchrow(query)
+        
+    return (str(row['id']), str(row['job_type'])) if row else (None, None)
+
+async def complete_processing_job(conn: asyncpg.Connection, job_id: UUID | str, status: str = 'completed') -> None:
+    await conn.execute("UPDATE processing_jobs SET status = $1, updated_at = now() WHERE id = $2", status, job_id)
+
+

@@ -108,6 +108,24 @@ Three converging forces make this the right moment:
 
 ## 2. Comprehensive System Architecture
 
+### 2.0 Feature Status
+
+| Feature | Status | Evidence |
+| --- | --- | --- |
+| Authentication | SHIPPED | Supabase Auth, middleware, `/login` |
+| Voice interview | SHIPPED | Gemini Live API, `useRealtimeSession` |
+| Memory extraction | SHIPPED | `MemoryExtractorService`, `process_session.py` |
+| Semantic retrieval | SHIPPED | `retrieval_service.py`, Pinecone upsert |
+| Memory graph & UI | SHIPPED | `apps/web/app/(subject)/memories/page.tsx` |
+| Family groups | SHIPPED | `apps/web/app/groups`, RLS policies |
+| Identity Profile | SHIPPED | `identity.py`, `/identity` endpoint, integrated into chat |
+| Mind Model | PARTIALLY IMPLEMENTED | `mind_model_builder.py`, `mind_model_snapshots` (No UI) |
+| Cognitive Engine | PARTIALLY IMPLEMENTED | `cognitive_engine.py` (No UI / Debug View) |
+| Persona Retraining | PARTIALLY IMPLEMENTED | `FinetuneBuilderService` implemented but provider fine-tuning is unsupported |
+| Autonomous Life Interview Engine | DESIGN / PLANNED | `014_autonomous_life_interview_engine.sql` only (Architecture doc + migration) |
+| Voice Fingerprint Engine | DESIGN / PLANNED | Documented in section 6 |
+| Cognitive evidence/conflict handling | DESIGN / PLANNED | Documented in architecture only |
+
 ### 2.1 Architecture Overview
 
 Emmy is composed of seven principal layers:
@@ -116,9 +134,9 @@ Emmy is composed of seven principal layers:
 - **FastAPI backend** orchestrating the AI pipeline and business logic
 - **Dual-database layer** — PostgreSQL via Supabase for structured data, Pinecone for vector embeddings
 - **Multi-model AI layer** — Gemini Live for native session audio and Gemini embeddings; Groq Llama for persona generation, structured extraction, and audio transcription
-- **Mind Model layer** — a consent-gated, evidence-linked cognitive model of values, reasoning, emotions, communication, and evolving life principles. It augments retrieval; it never substitutes unsupported traits for source memories.
-- **Cognitive Engine layer** — an intent-aware, relationship- and time-sensitive answer-planning layer that creates a bounded evidence ledger before persona generation. It never stores or exposes chain-of-thought.
-- **Autonomous Life Interview Engine** — a voluntary, coverage-aware long-horizon planner that identifies unexplored domains, recommends respectful follow-ups, tracks uncertainty, and keeps the subject in control.
+- **Mind Model layer** (Partially Implemented Backend) — a consent-gated, evidence-linked cognitive model of values, reasoning, emotions, communication, and evolving life principles. It augments retrieval; it never substitutes unsupported traits for source memories.
+- **Cognitive Engine layer** (Partially Implemented Backend) — an intent-aware, relationship- and time-sensitive answer-planning layer that creates a bounded evidence ledger before persona generation. It never stores or exposes chain-of-thought.
+- **Autonomous Life Interview Engine** (Design / Planned) — The repository contains the architecture and database foundation for the Autonomous Life Interview Engine; the complete runtime workflow is not yet shipped.
 
 FastAPI performs session processing, memory indexing, and persona updates directly within the request lifecycle. All infrastructure is deployable on Railway or Fly.io within a hackathon window.
 
@@ -644,6 +662,8 @@ After Railway redeploys, open `https://<railway-api-domain>/health`. The respons
 
 ## 8. Mind Model Architecture
 
+**Status: Partial / Backend Only.** The backend services and database schemas are implemented, but the frontend UI is on the roadmap.
+
 EMMY's Mind Model is an additive, consent-first cognitive layer over the existing Memory Graph and Pinecone RAG pipeline. It continuously turns reviewed interview evidence into **candidate** beliefs, values, reasoning patterns, emotional responses, communication style, wisdom principles, and time-bounded personality changes. It does not infer a trait without traceable evidence and it does not replace factual memory retrieval.
 
 Every Mind Model trait has evidence memories, confidence, first observed, last updated, and supporting-conversation counts. Traits below the configured threshold cannot influence a response. If no adequately supported evidence is available, Emmy must say: *"I don't know enough about how they would think about this."*
@@ -661,6 +681,8 @@ The complete production blueprint, schema, RLS model, confidence policy, cogniti
 
 ## 9. Cognitive Engine Architecture
 
+**Status: Partial / Backend Only.** The backend services and database schemas are implemented, but the frontend UI is on the roadmap.
+
 The Cognitive Engine adds a deliberate planning stage before EMMY generates an answer. It classifies intent, retrieves consent-eligible source memories, active Mind Model traits, relationship context, and the correct timeline version; it then creates a bounded answer plan with confidence and conflict state. The model generates language only from that plan and its cited evidence.
 
 ```text
@@ -675,6 +697,8 @@ See [Cognitive Engine Architecture](docs/cognitive-engine-architecture.md) for i
 ---
 
 ## 10. Autonomous Life Interview Engine
+
+**Status: Design / Roadmap Only.** The database schema migration exists, but the backend services and frontend UI are on the roadmap.
 
 The Autonomous Life Interview Engine makes EMMY a respectful lifelong Digital Legacy Builder. It tracks what has been explored across life domains, uncertainty, time since discussion, relationship/timeline opportunities, and voluntary clarification work. It recommends the next conversation without treating unshared experiences as missing facts or pressuring the subject to disclose anything.
 

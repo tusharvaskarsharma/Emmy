@@ -78,3 +78,50 @@ class SessionAudioStorageService:
             # satisfies this erasure request and keeps retrying safe.
             if response.status_code != 404:
                 response.raise_for_status()
+
+    async def delete_all(self, user_id: str) -> None:
+        """Permanently remove all private session recordings for a user."""
+        async with httpx.AsyncClient(timeout=90) as client:
+            response = await client.post(
+                f"{self.base_url}/storage/v1/object/list/{self.bucket}",
+                headers={**self.headers, "Content-Type": "application/json"},
+                json={"prefix": f"{user_id}/", "limit": 1000},
+            )
+            if response.status_code == 404:
+                return
+            response.raise_for_status()
+            
+            paths_to_delete = []
+            for entry in response.json():
+                if not isinstance(entry, dict):
+                    continue
+                name = entry.get("name")
+                if not name:
+                    continue
+                
+                # Check if it's a file directly under user_id/
+                if entry.get("id"): 
+                    paths_to_delete.append(f"{user_id}/{name}")
+                else:
+                    # It's a folder (session_id)
+                    folder_res = await client.post(
+                        f"{self.base_url}/storage/v1/object/list/{self.bucket}",
+                        headers={**self.headers, "Content-Type": "application/json"},
+                        json={"prefix": f"{user_id}/{name}/", "limit": 100},
+                    )
+                    if folder_res.is_success:
+                        for sub_entry in folder_res.json():
+                            if isinstance(sub_entry, dict) and sub_entry.get("name"):
+                                paths_to_delete.append(f"{user_id}/{name}/{sub_entry['name']}")
+            
+            if not paths_to_delete:
+                return
+                
+            for i in range(0, len(paths_to_delete), 100):
+                batch = paths_to_delete[i:i+100]
+                deletion = await client.delete(
+                    f"{self.base_url}/storage/v1/object/{self.bucket}",
+                    headers={**self.headers, "Content-Type": "application/json"},
+                    json={"prefixes": batch},
+                )
+                deletion.raise_for_status()

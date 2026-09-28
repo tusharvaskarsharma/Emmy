@@ -79,12 +79,15 @@ class PineconeService:
             logger.error(f"Failed to update Pinecone metadata: {e}")
             raise
 
-    def delete_vectors(self, namespace: str, ids: Optional[List[str]] = None, delete_all: bool = False):
-        """Deletes specific vectors or all vectors in a namespace."""
+    def delete_vectors(self, namespace: str, ids: Optional[List[str]] = None, delete_all: bool = False, filter: Optional[dict] = None):
+        """Deletes specific vectors or all vectors in a namespace, optionally matching a filter."""
         try:
             if delete_all:
                 self.index.delete(delete_all=True, namespace=namespace)
                 logger.info(f"Deleted all vectors in namespace '{namespace}'")
+            elif filter:
+                self.index.delete(filter=filter, namespace=namespace)
+                logger.info(f"Deleted vectors matching filter {filter} from namespace '{namespace}'")
             elif ids:
                 self.index.delete(ids=ids, namespace=namespace)
                 logger.info(f"Deleted {len(ids)} vectors from namespace '{namespace}'")

@@ -4,6 +4,8 @@ import httpx
 
 from app.auth.dependencies import get_current_user
 from app.config import get_settings
+from app.services.pinecone_service import PineconeService
+from app.services.account_erasure_service import AccountErasureService
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -37,7 +39,14 @@ async def delete_account(current_user: Annotated[dict, Depends(get_current_user)
     settings = get_settings()
     if not settings.supabase_url or not settings.supabase_service_role_key:
         raise HTTPException(503, "Account deletion is not configured")
-    async with httpx.AsyncClient(timeout=15) as client:
-        response = await client.delete(f"{settings.supabase_url.rstrip('/')}/auth/v1/admin/users/{current_user['sub']}", headers={"apikey": settings.supabase_service_role_key, "Authorization": f"Bearer {settings.supabase_service_role_key}"})
-    if response.status_code not in (200, 204):
-        raise HTTPException(502, "Unable to delete account")
+    
+    user_id = current_user['sub']
+    
+    erasure_service = AccountErasureService()
+    status_dict = await erasure_service.erase_account(user_id)
+    
+    if "failed" in status_dict.values():
+        # Distinguish between complete failure vs partial failure
+        raise HTTPException(502, f"Account erasure incomplete. Please try again. Status: {status_dict}")
+    
+    # Implicitly returns 204 No Content

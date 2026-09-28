@@ -1,5 +1,20 @@
 # EMMY Mind Model Architecture
 
+## Implementation Status
+
+**Implementation Status: PARTIALLY IMPLEMENTED**
+
+**Implemented:**
+- Database schema migration (`012_mind_model.sql`)
+- Backend builder service (`mind_model_builder.py`)
+- Backend API endpoints (`/mind/build` and `/mind/latest`)
+
+**Not yet implemented:**
+- Full integration into the main family conversation loop (`chat_service.py` currently builds prompts directly from memories and identity, not the full Mind Model pipeline).
+- Subject dashboard UI for reviewing/managing traits
+- Continuous learning triggers (currently only runs via manual API calls, not automatically post-session)
+
+*This document describes both current implementation and future architecture.*
 ## Purpose and boundary
 
 The Mind Model is a consent-gated cognitive layer added **on top of** EMMY's memory graph, Pinecone retrieval, persona generation, voice fingerprinting, and family conversation systems. It is not a general personality predictor and it never replaces a source memory.

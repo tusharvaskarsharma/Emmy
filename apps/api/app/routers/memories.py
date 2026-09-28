@@ -17,6 +17,7 @@ from app.services.session_service import SessionService
 from app.workers.index_memory import index_memory
 from app.workers.sync_consent import sync_memory_consent
 from app.services.pinecone_service import PineconeService
+from app.services.memory_erasure_service import MemoryErasureService
 from app.services.session_audio_storage_service import SessionAudioStorageService
 
 router = APIRouter(
@@ -80,7 +81,7 @@ async def _import_fallback_memories(
             # retries an import because the original fallback object remains.
             logger.exception("Unable to import fallback memory %s", fallback_memory.id)
 
-@router.post("/conversation", response_model=MemoryFragment, status_code=201)
+@router.post("/conversation", status_code=202)
 async def save_conversation_memory(
     conversation: ConversationMemoryCreate,
     user: Annotated[dict, Depends(require_subject)],
@@ -91,7 +92,7 @@ async def save_conversation_memory(
     if conn is None:
         saved = await MemoryStorageService().save_conversation(user_id, conversation.content)
         await _index_memory(saved, user_id)
-        return saved
+        return saved.model_dump()
 
     service = SessionService(conn, user_id, user.get("email"))
     session = await service.create_session(SessionCreate())
@@ -99,19 +100,8 @@ async def save_conversation_memory(
     # through the same one-story-per-memory processor used by live sessions.
     await service.save_transcript(str(session.id), conversation.content)
     await service.update_session(str(session.id), SessionUpdate(status=SessionStatus.COMPLETED))
-    row = await conn.fetchrow(
-        "SELECT id FROM public.memories WHERE session_id = $1 AND user_id = $2 ORDER BY created_at ASC LIMIT 1",
-        session.id, user_id,
-    )
-    if not row:
-        # This should only occur when the processor rejected an empty/invalid
-        # source after session completion; never pretend the memory was saved.
-        logger.error("Structured conversation processing produced no memory for session %s", session.id)
-        raise HTTPException(status_code=500, detail="The conversation could not be processed into a memory.")
-    saved = await repositories.get_memory(conn, row["id"], user_id)
-    if not saved:
-        raise HTTPException(status_code=500, detail="The processed memory could not be loaded.")
-    return saved
+    
+    return {"message": "Conversation queued for processing", "session_id": str(session.id)}
 
 @router.post("/draft", response_model=MemoryFragment, status_code=201)
 async def create_draft_memory(
@@ -232,6 +222,58 @@ async def delete_all_memories(
             "sessions": int(stats.get("sessions", 0)),
         },
     }
+
+@router.delete("/{memory_id}")
+async def delete_memory(
+    memory_id: str,
+    user: Annotated[dict, Depends(require_subject)],
+    conn: Annotated[asyncpg.Connection | None, Depends(get_optional_db)],
+):
+    """Irreversibly delete a single memory and its dependent external data."""
+    user_id = str(user["sub"])
+    
+    if conn is None:
+        try:
+            erasure_service = MemoryErasureService()
+            status = await erasure_service.erase_memory_external(user_id, memory_id)
+            if "failed" in status.values():
+                raise HTTPException(status_code=503, detail="Memory erasure could not complete. Please try again.")
+            return {"message": "Fallback memory deleted", "deleted": True}
+        except Exception as e:
+            logger.exception("Failed to delete fallback memory %s", memory_id)
+            raise HTTPException(status_code=500, detail="Failed to delete fallback memory")
+
+    try:
+        memory = await repositories.get_memory(conn, memory_id, user_id)
+        if not memory:
+            raise HTTPException(status_code=404, detail="Memory not found")
+    except asyncpg.PostgresError as e:
+        logger.exception("Failed to query memory %s", memory_id)
+        raise HTTPException(status_code=503, detail="Service unavailable")
+
+    erasure_service = MemoryErasureService()
+    status = await erasure_service.erase_memory_external(user_id, memory_id)
+    
+    if "failed" in status.values():
+        raise HTTPException(
+            status_code=503,
+            detail="Memory erasure could not complete. No database records were deleted; please try again."
+        )
+
+    try:
+        async with conn.transaction():
+            await conn.execute("DELETE FROM mind_evidence WHERE memory_id = $1 AND session_id IS NULL", memory_id)
+            await repositories.delete_memory(conn, memory_id, user_id)
+    except asyncpg.PostgresError as e:
+        logger.exception("External cleanup succeeded but DB deletion failed for memory %s", memory_id)
+        raise HTTPException(
+            status_code=500,
+            detail="External data was removed, but database cleanup failed. Please retry."
+        )
+
+    logger.info("Deleted memory %s for user %s", memory_id, user_id)
+    return {"message": "Memory deleted successfully", "deleted": True}
+
 
 @router.patch("/{memory_id}", response_model=MemoryFragment)
 async def update_memory_consent(

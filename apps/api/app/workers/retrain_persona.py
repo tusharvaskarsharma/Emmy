@@ -14,6 +14,7 @@ async def _retrain_persona_async(subject_id: str):
             print(f"Skipping finetune for {subject_id}: {e}")
         except Exception as e:
             print(f"Finetune error for {subject_id}: {e}")
+            raise
         break
 
 

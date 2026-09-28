@@ -17,7 +17,7 @@ export default function Dashboard() {
         <div className="clay-card p-10 md:p-16 flex flex-col items-center justify-center text-center gap-6 md:col-span-2 bg-secondary/10">
           <h2 className="text-5xl md:text-6xl font-serif text-primary">Welcome back, Grandma.</h2>
           <p className="text-2xl text-text/80 max-w-2xl mt-2">
-            Your living legacy is growing. We have a few more stories to capture today whenever you're ready.
+            Your living legacy is growing. We have a few more stories to capture today whenever you&apos;re ready.
           </p>
           <Link href="/session" className="clay-button-primary px-10 py-5 text-2xl mt-8 flex items-center gap-4">
             <Mic className="w-8 h-8" />
