@@ -168,7 +168,7 @@ export const api = {
     });
   },
 
-  saveConversation: async (content: string): Promise<Memory> => {
+  saveConversation: async (content: string): Promise<{ message: string; session_id: string }> => {
     return request("/memories/conversation", {
       method: "POST",
       body: JSON.stringify({ content })

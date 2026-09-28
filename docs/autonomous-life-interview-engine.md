@@ -1,5 +1,18 @@
 # EMMY Autonomous Life Interview Engine
 
+## Implementation Status
+
+**Implementation Status: DESIGN / PLANNED**
+
+**Implemented:**
+- Database schema migration (`014_autonomous_life_interview_engine.sql`).
+
+**Not yet implemented:**
+- No backend services (`coverage_service.py`, `interview_planner.py`, `relationship_discovery.py`, etc. do not exist).
+- No frontend UI or dashboard.
+- The complete runtime workflow is not yet shipped.
+
+*This document describes the planned future architecture.*
 ## Purpose and limits
 
 The Autonomous Life Interview Engine (ALIE) turns EMMY from isolated interview sessions into a voluntary, long-horizon Digital Legacy Builder. It knows which **domains have little supported coverage**, recommends the next best conversation, and adapts after each interview.

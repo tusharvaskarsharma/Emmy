@@ -1,5 +1,19 @@
 # EMMY Cognitive Reasoning Engine
 
+## Implementation Status
+
+**Implementation Status: PARTIALLY IMPLEMENTED**
+
+**Implemented:**
+- Core engine service logic (`cognitive_engine.py`) with Groq completion.
+- Pydantic models for reasoning plans (`app.models.cognitive`).
+- Integrated into the `/api/emmy/conversation` endpoint (used by `EmmyExperience.tsx`).
+
+**Not yet implemented:**
+- No dedicated frontend UI or debug view for the cognitive engine internals.
+- Verification scan and memory conflict resolution are only designed, not executable.
+
+*This document describes both current implementation and future architecture.*
 ## Purpose
 
 The Cognitive Engine is the response-time reasoning layer above EMMY's Memory Graph, Mind Model, Persona Model, RAG, Voice Model, Consent Architecture, and Confidence Engine. It does not make EMMY more speculative. It makes the order of operations explicit:

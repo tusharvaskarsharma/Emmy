@@ -56,8 +56,13 @@ class SessionService:
         updated_session = await repositories.update_session(self.conn, session, self.subject_id)
         
         if should_process:
-            await process_session(str(session.id))
-            logger.info(f"Completed process_session for session {session.id}")
+            owner_id = await self.conn.fetchval("SELECT user_id FROM sessions WHERE id = $1", session.id)
+            if owner_id:
+                job_id = await repositories.enqueue_session_processing(self.conn, session.id, owner_id)
+                if job_id:
+                    logger.info(f"Enqueued process_session for session {session.id} with job {job_id}")
+                else:
+                    logger.info(f"Job for session {session.id} already exists")
                 
         return updated_session
 

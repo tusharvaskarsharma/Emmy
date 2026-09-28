@@ -47,4 +47,4 @@ def test_conversation_save_uses_the_structured_session_processor_before_returnin
         )
     )
 
-    assert saved.content == "A conversation worth keeping."
+    assert saved["message"] == "Conversation queued for processing"

@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+import asyncio
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
@@ -7,13 +8,16 @@ from .config import get_settings
 from .routers import sessions, memories, emmy, emmy_conversation, finetune, auth, realtime, mind, profile, groups, identity
 from .db.client import db_client
 from .auth.middleware import AuthMiddleware
+from .workers.job_runner import start_job_runner, stop_job_runner
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Initialize DB or external connections here
     await db_client.connect()
+    runner_task = asyncio.create_task(start_job_runner())
     yield
     # Clean up here
+    await stop_job_runner(runner_task)
     await db_client.disconnect()
 
 app = FastAPI(title="Emmy API", version="0.1.0", lifespan=lifespan)

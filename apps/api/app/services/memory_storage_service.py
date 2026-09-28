@@ -102,6 +102,17 @@ class MemoryStorageService:
             upload.raise_for_status()
         return memory
 
+    async def delete_memory(self, user_id: str, memory_id: str) -> None:
+        """Permanently removes a single legacy fallback memory object."""
+        path = self._path(user_id, memory_id)
+        async with httpx.AsyncClient(timeout=30) as client:
+            response = await client.delete(
+                f"{self.settings.supabase_url}/storage/v1/object/{self.bucket}/{path}",
+                headers=self.headers,
+            )
+            if response.status_code != 404:
+                response.raise_for_status()
+
     async def delete_all(self, user_id: str) -> None:
         """Permanently remove this user's legacy fallback memory objects.
 
